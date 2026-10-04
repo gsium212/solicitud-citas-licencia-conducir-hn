@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import {
@@ -19,6 +19,9 @@ import {
   AlertTriangle,
   Star,
   Timer,
+  Volume2,
+  VolumeX,
+  Bell,
 } from 'lucide-react';
 
 export default function OficialPage() {
@@ -26,20 +29,63 @@ export default function OficialPage() {
   const [metricas, setMetricas] = useState<Metricas | null>(null);
   const [mensaje, setMensaje] = useState<{ tipo: 'success' | 'error'; texto: string } | null>(null);
   const [filtroEstado, setFiltroEstado] = useState<'todos' | 'Pendiente' | 'Atendido' | 'No Asistió'>('todos');
+  const [sonidoActivo, setSonidoActivo] = useState(true);
+  const [notificacion, setNotificacion] = useState<string | null>(null);
 
-  const cargarDatos = () => {
+  const cargarDatos = useCallback(() => {
     setCitas(getCitasHoy());
     setMetricas(getMetricas());
-  };
+  }, []);
 
   useEffect(() => {
     cargarDatos();
-  }, []);
+  }, [cargarDatos]);
+
+  // Auto-refresh every 30 seconds
+  useEffect(() => {
+    const interval = setInterval(cargarDatos, 30000);
+    return () => clearInterval(interval);
+  }, [cargarDatos]);
+
+  const playSound = (type: 'success' | 'warning') => {
+    if (!sonidoActivo) return;
+    try {
+      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const oscillator = audioCtx.createOscillator();
+      const gainNode = audioCtx.createGain();
+      
+      oscillator.connect(gainNode);
+      gainNode.connect(audioCtx.destination);
+      
+      if (type === 'success') {
+        oscillator.frequency.value = 800;
+        oscillator.type = 'sine';
+      } else {
+        oscillator.frequency.value = 400;
+        oscillator.type = 'square';
+      }
+      
+      gainNode.gain.setValueAtTime(0.3, audioCtx.currentTime);
+      gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
+      
+      oscillator.start(audioCtx.currentTime);
+      oscillator.stop(audioCtx.currentTime + 0.3);
+    } catch (e) {
+      // Audio not supported
+    }
+  };
+
+  const showNotification = (text: string) => {
+    setNotificacion(text);
+    setTimeout(() => setNotificacion(null), 3000);
+  };
 
   const handleAtendido = (citaId: string) => {
     const result = marcarAtendido(citaId);
     if (result.success) {
-      setMensaje({ tipo: 'success', texto: 'Cita marcada como atendida.' });
+      setMensaje({ tipo: 'success', texto: '✅ Cita marcada como atendida.' });
+      playSound('success');
+      showNotification('Atendido correctamente');
     } else {
       setMensaje({ tipo: 'error', texto: result.error || 'Error.' });
     }
@@ -48,9 +94,15 @@ export default function OficialPage() {
   };
 
   const handleInasistencia = (citaId: string) => {
+    const cita = citas.find(c => c.id === citaId);
+    if (cita && !confirm(`¿Registrar inasistencia para ${cita.nombre_persona}?\n\nSe aplicará sanción de 5 días hábiles.`)) {
+      return;
+    }
     const result = marcarInasistencia(citaId);
     if (result.success) {
-      setMensaje({ tipo: 'success', texto: 'Inasistencia registrada. Sanción aplicada (5 días hábiles).' });
+      setMensaje({ tipo: 'success', texto: '⚠️ Inasistencia registrada. Sanción aplicada (5 días hábiles).' });
+      playSound('warning');
+      showNotification('Inasistencia registrada');
     } else {
       setMensaje({ tipo: 'error', texto: result.error || 'Error.' });
     }
@@ -62,23 +114,45 @@ export default function OficialPage() {
     ? citas
     : citas.filter(c => c.estado === filtroEstado);
 
-  const hoy = format(new Date(), "dd 'de' MMMM, yyyy", { locale: es });
+  const pendientes = citas.filter(c => c.estado === 'Pendiente');
+  const hoy = format(new Date(), "EEEE, dd 'de' MMMM yyyy", { locale: es });
 
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
         <div>
           <h2 className="text-2xl font-bold text-gray-800">Panel del Oficial</h2>
-          <p className="text-gray-500">{hoy}</p>
+          <p className="text-gray-500 capitalize">{hoy}</p>
         </div>
-        <button
-          onClick={cargarDatos}
-          className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
-        >
-          <RefreshCw className="w-4 h-4" />
-          Actualizar
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setSonidoActivo(!sonidoActivo)}
+            className={`p-2 rounded-lg transition-colors ${
+              sonidoActivo ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-400'
+            }`}
+            title={sonidoActivo ? 'Sonido activado' : 'Sonido desactivado'}
+          >
+            {sonidoActivo ? <Volume2 className="w-5 h-5" /> : <VolumeX className="w-5 h-5" />}
+          </button>
+          <button
+            onClick={cargarDatos}
+            className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+          >
+            <RefreshCw className="w-4 h-4" />
+            <span className="hidden sm:inline">Actualizar</span>
+          </button>
+        </div>
       </div>
+
+      {/* Toast Notification */}
+      {notificacion && (
+        <div className="fixed top-20 right-4 z-50 animate-slide-in">
+          <div className="flex items-center gap-2 px-4 py-3 bg-white border border-gray-200 rounded-xl shadow-lg">
+            <Bell className="w-4 h-4 text-blue-500" />
+            <span className="text-sm font-medium text-gray-700">{notificacion}</span>
+          </div>
+        </div>
+      )}
 
       {/* Message */}
       {mensaje && (
@@ -99,7 +173,10 @@ export default function OficialPage() {
               <span className="text-xs text-gray-500">Total Hoy</span>
             </div>
             <p className="text-2xl font-bold text-gray-800">{metricas.total_citas_hoy}</p>
-            <p className="text-xs text-gray-400">de {50} aforo</p>
+            <div className="mt-2 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+              <div className="h-full bg-blue-500 rounded-full" style={{ width: `${(metricas.total_citas_hoy / 50) * 100}%` }} />
+            </div>
+            <p className="text-xs text-gray-400 mt-1">{metricas.aforo_restante} cupos libres</p>
           </div>
           <div className="bg-white rounded-xl p-4 border border-gray-100 shadow-sm">
             <div className="flex items-center gap-2 mb-1">
@@ -125,6 +202,29 @@ export default function OficialPage() {
         </div>
       )}
 
+      {/* Current Turn Display */}
+      {pendientes.length > 0 && (
+        <div className="mb-6 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-xl p-5 text-white shadow-lg">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-blue-100 mb-1">Siguiente en cola</p>
+              <div className="flex items-center gap-3">
+                <span className="text-4xl font-bold">#{pendientes[0].numero_turno}</span>
+                <div>
+                  <p className="font-medium">{pendientes[0].nombre_persona}</p>
+                  <p className="text-sm text-blue-200">DNI: {pendientes[0].dni_persona}</p>
+                </div>
+              </div>
+            </div>
+            <div className="text-right">
+              <p className="text-sm text-blue-100">En cola</p>
+              <p className="text-3xl font-bold">{pendientes.length}</p>
+              <p className="text-sm text-blue-200">personas</p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Filter */}
       <div className="flex items-center gap-2 mb-4 flex-wrap">
         <span className="text-sm text-gray-500">Filtrar:</span>
@@ -139,6 +239,9 @@ export default function OficialPage() {
             }`}
           >
             {f === 'todos' ? 'Todos' : f}
+            {f === 'Pendiente' && pendientes.length > 0 && (
+              <span className="ml-1 px-1.5 py-0.5 bg-blue-600 text-white text-xs rounded-full">{pendientes.length}</span>
+            )}
           </button>
         ))}
       </div>
@@ -156,17 +259,18 @@ export default function OficialPage() {
           <div className="p-12 text-center text-gray-400">
             <Users className="w-12 h-12 mx-auto mb-3 opacity-50" />
             <p>No hay citas para mostrar</p>
+            <p className="text-sm mt-1">Las citas agendadas para hoy aparecerán aquí</p>
           </div>
         ) : (
           <div className="divide-y divide-gray-50">
             {citasFiltradas.map(cita => (
               <div key={cita.id} className={`p-4 sm:p-5 hover:bg-gray-50/50 transition-colors ${
                 cita.es_prioritario ? 'bg-yellow-50/50' : ''
-              }`}>
+              } ${cita === pendientes[0] && filtroEstado !== 'Atendido' && filtroEstado !== 'No Asistió' ? 'ring-2 ring-blue-200 ring-inset' : ''}`}>
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex items-start gap-4">
                     {/* Turno Badge */}
-                    <div className={`w-12 h-12 rounded-xl flex items-center justify-center font-bold text-lg ${
+                    <div className={`w-12 h-12 rounded-xl flex items-center justify-center font-bold text-lg flex-shrink-0 ${
                       cita.estado === 'Atendido'
                         ? 'bg-green-100 text-green-700'
                         : cita.estado === 'No Asistió'
@@ -177,7 +281,7 @@ export default function OficialPage() {
                     </div>
 
                     <div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <h4 className="font-medium text-gray-800">{cita.nombre_persona}</h4>
                         {cita.es_prioritario && (
                           <span className="flex items-center gap-0.5 px-1.5 py-0.5 bg-yellow-100 text-yellow-700 text-xs font-medium rounded-full">
@@ -185,9 +289,14 @@ export default function OficialPage() {
                             Prioritario
                           </span>
                         )}
+                        {cita === pendientes[0] && cita.estado === 'Pendiente' && (
+                          <span className="px-2 py-0.5 bg-blue-600 text-white text-xs font-medium rounded-full animate-pulse">
+                            SIGUIENTE
+                          </span>
+                        )}
                       </div>
                       <p className="text-sm text-gray-500">DNI: {cita.dni_persona} • Tel: {cita.telefono}</p>
-                      <div className="flex items-center gap-3 mt-1">
+                      <div className="flex items-center gap-3 mt-1 flex-wrap">
                         <span className="text-xs text-gray-400">
                           Licencias: {cita.tipos_licencia.join(', ')}
                         </span>
@@ -201,7 +310,7 @@ export default function OficialPage() {
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-shrink-0">
                     {/* Status Badge */}
                     <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${
                       cita.estado === 'Pendiente'
@@ -238,6 +347,11 @@ export default function OficialPage() {
             ))}
           </div>
         )}
+      </div>
+
+      {/* Footer Info */}
+      <div className="mt-4 text-center text-xs text-gray-400">
+        Actualización automática cada 30 segundos • {citas.length} citas registradas hoy
       </div>
     </div>
   );

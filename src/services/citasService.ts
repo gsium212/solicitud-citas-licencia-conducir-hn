@@ -321,6 +321,42 @@ export function getAllCitas(): Cita[] {
   return getCitas().sort((a, b) => new Date(b.creado_en).getTime() - new Date(a.creado_en).getTime());
 }
 
+export function consultarCitaPorDni(dni: string): Cita[] {
+  return getCitas()
+    .filter(c => c.dni_persona === dni)
+    .sort((a, b) => b.fecha_cita.localeCompare(a.fecha_cita));
+}
+
+export function getCitasParaGrafico(dias: number = 7): { fecha: string; atendidos: number; inasistencias: number; total: number }[] {
+  const citas = getCitas();
+  const resultado: { fecha: string; atendidos: number; inasistencias: number; total: number }[] = [];
+  
+  for (let i = dias - 1; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    const fechaStr = format(d, 'yyyy-MM-dd');
+    const citasDia = citas.filter(c => c.fecha_cita === fechaStr);
+    resultado.push({
+      fecha: format(d, 'dd/MM'),
+      total: citasDia.length,
+      atendidos: citasDia.filter(c => c.estado === 'Atendido').length,
+      inasistencias: citasDia.filter(c => c.estado === 'No Asistió').length,
+    });
+  }
+  return resultado;
+}
+
+export function getDistribucionLicencias(): { nombre: string; cantidad: number }[] {
+  const citas = getCitas();
+  const count: Record<string, number> = {};
+  citas.forEach(c => {
+    c.tipos_licencia.forEach(tl => {
+      count[tl] = (count[tl] || 0) + 1;
+    });
+  });
+  return Object.entries(count).map(([nombre, cantidad]) => ({ nombre, cantidad })).sort((a, b) => b.cantidad - a.cantidad);
+}
+
 export function getCitasRango(fechaDesde: string, fechaHasta: string): Cita[] {
   return getCitas()
     .filter(c => c.fecha_cita >= fechaDesde && c.fecha_cita <= fechaHasta)

@@ -8,6 +8,8 @@ import {
   toggleUsuarioActivo,
   getAllCitas,
   getCitasRango,
+  getCitasParaGrafico,
+  getDistribucionLicencias,
 } from '../services/citasService';
 import { Cita, Usuario, Metricas } from '../types';
 import {
@@ -20,13 +22,30 @@ import {
   FileText,
   TrendingUp,
   AlertTriangle,
-  Clock,
   CheckCircle,
   XCircle,
   Star,
+  Activity,
 } from 'lucide-react';
+import {
+  LineChart,
+  Line,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  Legend,
+  PieChart,
+  Pie,
+  Cell,
+} from 'recharts';
 
 type Tab = 'metricas' | 'usuarios' | 'citas';
+
+const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16'];
 
 export default function AdminPage() {
   const [tab, setTab] = useState<Tab>('metricas');
@@ -38,11 +57,15 @@ export default function AdminPage() {
   const [errorUser, setErrorUser] = useState('');
   const [fechaDesde, setFechaDesde] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [fechaHasta, setFechaHasta] = useState(format(new Date(), 'yyyy-MM-dd'));
+  const [datosGrafico, setDatosGrafico] = useState<{ fecha: string; atendidos: number; inasistencias: number; total: number }[]>([]);
+  const [datosLicencias, setDatosLicencias] = useState<{ nombre: string; cantidad: number }[]>([]);
 
   const cargarDatos = () => {
     setMetricas(getMetricas());
     setUsuarios(getAllUsuarios());
     setCitas(getAllCitas().slice(0, 50));
+    setDatosGrafico(getCitasParaGrafico(7));
+    setDatosLicencias(getDistribucionLicencias());
   };
 
   useEffect(() => {
@@ -164,38 +187,146 @@ export default function AdminPage() {
             </div>
           </div>
 
-          {/* Inattendance Rate */}
-          <div className="bg-white rounded-xl p-6 border border-gray-100 shadow-sm">
-            <h3 className="font-semibold text-gray-700 mb-4 flex items-center gap-2">
-              <AlertTriangle className="w-5 h-5 text-amber-500" />
-              Tasa de Inasistencia
-            </h3>
-            <div className="flex items-center gap-6">
-              <div className="relative w-32 h-32">
-                <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
-                  <circle cx="50" cy="50" r="40" fill="none" stroke="#f3f4f6" strokeWidth="12" />
-                  <circle
-                    cx="50" cy="50" r="40" fill="none"
-                    stroke={metricas.tasa_inasistencia > 20 ? '#ef4444' : metricas.tasa_inasistencia > 10 ? '#f59e0b' : '#22c55e'}
-                    strokeWidth="12"
-                    strokeDasharray={`${metricas.tasa_inasistencia * 2.51} 251`}
-                    strokeLinecap="round"
+          {/* Charts Row */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Line Chart - Weekly Trend */}
+            <div className="bg-white rounded-xl p-5 border border-gray-100 shadow-sm">
+              <h3 className="font-semibold text-gray-700 mb-4 flex items-center gap-2">
+                <Activity className="w-5 h-5 text-blue-500" />
+                Tendencia Semanal
+              </h3>
+              <ResponsiveContainer width="100%" height={220}>
+                <LineChart data={datosGrafico}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                  <XAxis dataKey="fecha" tick={{ fontSize: 12 }} stroke="#9ca3af" />
+                  <YAxis tick={{ fontSize: 12 }} stroke="#9ca3af" />
+                  <Tooltip
+                    contentStyle={{ borderRadius: '8px', border: '1px solid #e5e7eb', fontSize: '12px' }}
                   />
-                </svg>
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <span className="text-2xl font-bold text-gray-800">{metricas.tasa_inasistencia}%</span>
+                  <Legend wrapperStyle={{ fontSize: '12px' }} />
+                  <Line type="monotone" dataKey="total" stroke="#3b82f6" strokeWidth={2} name="Total" dot={{ r: 4 }} />
+                  <Line type="monotone" dataKey="atendidos" stroke="#10b981" strokeWidth={2} name="Atendidos" dot={{ r: 4 }} />
+                  <Line type="monotone" dataKey="inasistencias" stroke="#ef4444" strokeWidth={2} name="Inasistencias" dot={{ r: 4 }} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+
+            {/* Bar Chart - License Distribution */}
+            <div className="bg-white rounded-xl p-5 border border-gray-100 shadow-sm">
+              <h3 className="font-semibold text-gray-700 mb-4 flex items-center gap-2">
+                <BarChart3 className="w-5 h-5 text-purple-500" />
+                Distribución de Licencias
+              </h3>
+              {datosLicencias.length > 0 ? (
+                <ResponsiveContainer width="100%" height={220}>
+                  <BarChart data={datosLicencias}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                    <XAxis dataKey="nombre" tick={{ fontSize: 11 }} stroke="#9ca3af" />
+                    <YAxis tick={{ fontSize: 12 }} stroke="#9ca3af" />
+                    <Tooltip
+                      contentStyle={{ borderRadius: '8px', border: '1px solid #e5e7eb', fontSize: '12px' }}
+                    />
+                    <Bar dataKey="cantidad" name="Cantidad" radius={[4, 4, 0, 0]}>
+                      {datosLicencias.map((_, index) => (
+                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="h-[220px] flex items-center justify-center text-gray-400 text-sm">
+                  No hay datos de licencias aún
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Inattendance Rate + Pie */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="bg-white rounded-xl p-6 border border-gray-100 shadow-sm">
+              <h3 className="font-semibold text-gray-700 mb-4 flex items-center gap-2">
+                <AlertTriangle className="w-5 h-5 text-amber-500" />
+                Tasa de Inasistencia
+              </h3>
+              <div className="flex items-center gap-6">
+                <div className="relative w-32 h-32">
+                  <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
+                    <circle cx="50" cy="50" r="40" fill="none" stroke="#f3f4f6" strokeWidth="12" />
+                    <circle
+                      cx="50" cy="50" r="40" fill="none"
+                      stroke={metricas.tasa_inasistencia > 20 ? '#ef4444' : metricas.tasa_inasistencia > 10 ? '#f59e0b' : '#22c55e'}
+                      strokeWidth="12"
+                      strokeDasharray={`${metricas.tasa_inasistencia * 2.51} 251`}
+                      strokeLinecap="round"
+                    />
+                  </svg>
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <span className="text-2xl font-bold text-gray-800">{metricas.tasa_inasistencia}%</span>
+                  </div>
+                </div>
+                <div className="text-sm text-gray-600">
+                  <p>La tasa de inasistencia del día es <strong>{metricas.tasa_inasistencia}%</strong>.</p>
+                  <p className="mt-1 text-gray-400">
+                    {metricas.tasa_inasistencia > 20
+                      ? '⚠️ Tasa alta — considere enviar recordatorios.'
+                      : metricas.tasa_inasistencia > 10
+                      ? '📊 Tasa moderada — dentro de lo esperado.'
+                      : '✅ Tasa baja — buen cumplimiento.'}
+                  </p>
                 </div>
               </div>
-              <div className="text-sm text-gray-600">
-                <p>La tasa de inasistencia del día es <strong>{metricas.tasa_inasistencia}%</strong>.</p>
-                <p className="mt-1 text-gray-400">
-                  {metricas.tasa_inasistencia > 20
-                    ? '⚠️ Tasa alta — considere enviar recordatorios.'
-                    : metricas.tasa_inasistencia > 10
-                    ? '📊 Tasa moderada — dentro de lo esperado.'
-                    : '✅ Tasa baja — buen cumplimiento.'}
-                </p>
-              </div>
+            </div>
+
+            {/* Pie Chart - Status Distribution */}
+            <div className="bg-white rounded-xl p-6 border border-gray-100 shadow-sm">
+              <h3 className="font-semibold text-gray-700 mb-4 flex items-center gap-2">
+                <BarChart3 className="w-5 h-5 text-green-500" />
+                Estado de Citas (Hoy)
+              </h3>
+              {metricas.total_citas_hoy > 0 ? (
+                <div className="flex items-center gap-4">
+                  <ResponsiveContainer width="50%" height={160}>
+                    <PieChart>
+                      <Pie
+                        data={[
+                          { name: 'Pendientes', value: metricas.pendientes_hoy },
+                          { name: 'Atendidos', value: metricas.atendidos_hoy },
+                          { name: 'No Asistió', value: metricas.no_asistieron_hoy },
+                        ].filter(d => d.value > 0)}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={35}
+                        outerRadius={65}
+                        dataKey="value"
+                        paddingAngle={2}
+                      >
+                        <Cell fill="#3b82f6" />
+                        <Cell fill="#10b981" />
+                        <Cell fill="#ef4444" />
+                      </Pie>
+                      <Tooltip contentStyle={{ borderRadius: '8px', fontSize: '12px' }} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <div className="w-3 h-3 rounded-full bg-blue-500" />
+                      <span className="text-sm text-gray-600">Pendientes: {metricas.pendientes_hoy}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-3 h-3 rounded-full bg-green-500" />
+                      <span className="text-sm text-gray-600">Atendidos: {metricas.atendidos_hoy}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-3 h-3 rounded-full bg-red-500" />
+                      <span className="text-sm text-gray-600">No Asistió: {metricas.no_asistieron_hoy}</span>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="h-[160px] flex items-center justify-center text-gray-400 text-sm">
+                  No hay citas hoy
+                </div>
+              )}
             </div>
           </div>
         </div>
